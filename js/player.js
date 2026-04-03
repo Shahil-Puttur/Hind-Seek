@@ -169,4 +169,4 @@ class Player {
             ctx.restore();
         }
     }
-            }
+}
