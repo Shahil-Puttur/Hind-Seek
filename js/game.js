@@ -3,7 +3,7 @@
 const Game = {
     canvas: null,
     ctx: null,
-    mode: 'offline', // 'offline' or 'online'
+    mode: 'offline', 
     isPlaying: false,
     
     players: {},
@@ -11,7 +11,7 @@ const Game = {
     localPlayerId: null,
     
     worldObjects: [],
-    mapItems: {}, // Stores diamonds { objIndex: 'diamond' }
+    mapItems: {}, 
     explosions: [],
     
     camera: { x: 0, y: 0, shakeTime: 0, shakeIntensity: 0 },
@@ -36,14 +36,12 @@ const Game = {
     },
 
     setupInput: function() {
-        // Keyboard
         window.addEventListener('keydown', (e) => { 
             this.keys[e.code] = true; 
             if(e.code === 'Space') this.handleAction(); 
         });
         window.addEventListener('keyup', (e) => this.keys[e.code] = false);
 
-        // Joystick
         const zone = document.getElementById('joystick-zone');
         const knob = document.getElementById('joystick-knob');
         let isDragging = false, touchId = null, center = { x: 0, y: 0 };
@@ -75,7 +73,6 @@ const Game = {
             }
         });
 
-        // Action Buttons
         document.getElementById('btn-shoot').addEventListener('pointerdown', (e) => {
             e.preventDefault(); this.handleAction();
         });
@@ -103,15 +100,12 @@ const Game = {
         for (let r = 0; r < CONFIG.MAP_SIZE; r++) {
             for (let c = 0; c < CONFIG.MAP_SIZE; c++) {
                 let x = c * CONFIG.TILE_SIZE; let y = r * CONFIG.TILE_SIZE;
-                // Border Walls
                 if (r === 0 || r === CONFIG.MAP_SIZE - 1 || c === 0 || c === CONFIG.MAP_SIZE - 1) { 
                     this.worldObjects.push({ type: 'wall', x: x, y: y, size: CONFIG.TILE_SIZE, isSolid: true }); 
                     continue; 
                 }
-                // Leave spawn areas empty
                 if ((c < 4 && r < 4) || (c > CONFIG.MAP_SIZE - 5 && r > CONFIG.MAP_SIZE - 5)) continue;
 
-                // Random Obstacles
                 let rand = Utils.randomSeed();
                 if (rand > 0.8) this.worldObjects.push({ type: 'barrel', x: x, y: y, size: CONFIG.TILE_SIZE-10, isSolid: true, isContainer: true });
                 else if (rand > 0.6) this.worldObjects.push({ type: 'tree', x: x, y: y, size: CONFIG.TILE_SIZE, isSolid: true, isContainer: true });
@@ -138,7 +132,8 @@ const Game = {
 
         UI.showScreen('screen-transition');
         
-        let count = 5;
+        // 15 Second Countdown!
+        let count = 15;
         let cdEl = document.getElementById('transition-countdown');
         cdEl.innerText = count;
 
@@ -155,7 +150,6 @@ const Game = {
     startRound: function() {
         this.generateMap(this.mode === 'online' ? window.dbMapSeed : Utils.randomSeed() * 10000);
         
-        // Reset players
         for(let id in this.players) {
             let p = this.players[id];
             p.hearts = CONFIG.MAX_HEARTS;
@@ -168,7 +162,6 @@ const Game = {
 
         this.roundEndTime = Date.now() + CONFIG.ROUND_TIME_MS;
         
-        // Setup HUD
         let locP = this.players[this.localPlayerId];
         UI.setSpectatorMode(false);
         UI.showScreen('screen-game-hud');
@@ -195,20 +188,17 @@ const Game = {
 
         const btn = document.getElementById('btn-shoot');
 
-        // 1. Aim Mode Toggle
         if (!p.isAiming) {
             p.isAiming = true;
-            btn.style.boxShadow = "0 0 20px #e74c3c"; // glow
+            btn.style.boxShadow = "0 0 20px #e74c3c"; 
             return;
         }
 
-        // 2. Execute Action (Shoot/Interact)
         p.isAiming = false;
         btn.style.boxShadow = "";
         
         let ray = this.performRaycast(p);
         
-        // Render explosion locally
         this.explosions.push({ x: ray.hitX, y: ray.hitY, radius: 10, maxRadius: 40, life: 1.0 });
         this.camera.shakeTime = 5; 
         this.camera.shakeIntensity = 10;
@@ -218,7 +208,6 @@ const Game = {
         }
 
         if (p.role === 'Fox') {
-            // FOX ACTION: Place Diamond OR Shoot Panda
             if (ray.hitTarget === 'object' && ray.hitObj.isContainer) {
                 if (this.placedDiamonds < CONFIG.DIAMONDS_PER_ROUND) {
                     if (!this.mapItems[ray.hitObjIndex]) {
@@ -233,14 +222,13 @@ const Game = {
                     UI.showAlert("OUT OF DIAMONDS!", "#e74c3c");
                 }
             } else if (ray.hitTarget === 'player') {
-                let hitP = this.players[ray.hitObjIndex]; // For players, index is ID
+                let hitP = this.players[ray.hitObjIndex]; 
                 if (hitP.role === 'Panda') {
                     hitP.takeDamage();
                     UI.showAlert("HIT PANDA!", "#e74c3c");
                 }
             }
         } else if (p.role === 'Panda') {
-            // PANDA ACTION: Inspect Object
             if (ray.hitTarget === 'object' && ray.hitObj.isContainer) {
                 if (this.mapItems[ray.hitObjIndex] === 'diamond') {
                     delete this.mapItems[ray.hitObjIndex];
@@ -260,13 +248,11 @@ const Game = {
         let gunX = shooter.x; let gunY = shooter.y; 
         let hitX = gunX; let hitY = gunY; 
         let hitTarget = null; let hitObjIndex = -1; let hitObj = null;
-        let closestDist = Infinity;
         
         for (let dist = 0; dist < 500; dist += 5) {
             hitX = gunX + shooter.aimDir.x * dist; 
             hitY = gunY + shooter.aimDir.y * dist;
             
-            // Check Players
             for (let id in this.players) {
                 let p = this.players[id];
                 if (p.id !== shooter.id && !p.isDead && p.teamId !== shooter.teamId) {
@@ -276,7 +262,6 @@ const Game = {
                 }
             }
 
-            // Check Objects
             for (let j = 0; j < this.worldObjects.length; j++) {
                 let obj = this.worldObjects[j];
                 if (obj.isSolid || obj.isContainer) {
@@ -297,9 +282,8 @@ const Game = {
             TeamManager.assignRolesForRound();
             this.startTransition();
         } else {
-            // End Match
             let winner = TeamManager.getWinner();
-            let totalD = TeamManager.teams.A.score + TeamManager.teams.B.score; // In offline this varies
+            let totalD = TeamManager.teams.A.score + TeamManager.teams.B.score; 
             
             document.getElementById('result-winner').innerText = winner === "DRAW" ? "MATCH DRAW 🤝" : `${winner} WINS! 🎉`;
             document.getElementById('result-diamonds').innerText = totalD;
@@ -321,7 +305,6 @@ const Game = {
         if(dt > 0.05) dt = 0.05; 
         this.lastTime = timestamp;
 
-        // Offline Fallback Input
         if (this.input.x === 0 && this.input.y === 0) {
             let dx=0, dy=0;
             if (this.keys['KeyW'] || this.keys['ArrowUp']) dy -= 1;
@@ -331,15 +314,12 @@ const Game = {
             this.input = {x: dx, y: dy};
         }
 
-        // Update local player
         let locP = this.players[this.localPlayerId];
         locP.update(dt, this.input, this.worldObjects);
 
-        // Update Bots
         if (this.mode === 'offline') {
             for (let bot of this.bots) {
                 bot.update(dt, this.worldObjects, this.players);
-                // Handle bot shooting
                 if (bot.wantsToShoot) {
                     bot.wantsToShoot = false;
                     let ray = this.performRaycast(bot.player);
@@ -350,11 +330,9 @@ const Game = {
                 }
             }
         } else {
-            // Online Sync
             Network.syncPosition(locP.x, locP.y, locP.isAiming, locP.aimDir);
         }
 
-        // Camera Logic
         let tCamX = locP.x - this.canvas.width / 2; 
         let tCamY = locP.y - this.canvas.height / 2;
         if(this.camera.shakeTime > 0) { 
@@ -365,10 +343,8 @@ const Game = {
         this.camera.x += (tCamX - this.camera.x) * (dt * 6); 
         this.camera.y += (tCamY - this.camera.y) * (dt * 6);
 
-        // Render
         this.render();
 
-        // Round Checks
         let msLeft = this.roundEndTime - Date.now();
         UI.updateHUDTimer(msLeft);
 
@@ -397,11 +373,9 @@ const Game = {
         ctx.save(); 
         ctx.translate(-Math.floor(this.camera.x), -Math.floor(this.camera.y));
         
-        // Draw Map Border
         ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 5;
         ctx.strokeRect(0, 0, CONFIG.MAP_PIXEL_SIZE, CONFIG.MAP_PIXEL_SIZE);
 
-        // Sort Y for depth
         let renderQ = [];
         for(let i=0; i<this.worldObjects.length; i++) {
             renderQ.push({ type: 'obj', y: this.worldObjects[i].y + this.worldObjects[i].size, item: this.worldObjects[i], id: i });
@@ -421,11 +395,9 @@ const Game = {
                 ctx.fillStyle = obj.type === 'wall' ? '#34495e' : (obj.type === 'tree' ? '#27ae60' : '#e67e22');
                 ctx.fillRect(obj.x, obj.y, obj.size, obj.size);
                 
-                // Debug text
                 ctx.fillStyle = '#fff'; ctx.font = '12px Arial';
                 ctx.fillText(obj.type, obj.x + 5, obj.y + 20);
 
-                // Highlight if it contains diamond (only Fox sees this)
                 if (this.players[this.localPlayerId].role === 'Fox' && this.mapItems[q.id] === 'diamond') {
                     ctx.strokeStyle = '#3498db'; ctx.lineWidth = 3;
                     ctx.strokeRect(obj.x, obj.y, obj.size, obj.size);
@@ -433,7 +405,6 @@ const Game = {
             }
         }
 
-        // Draw Aim Lines
         for(let id in this.players) {
             let p = this.players[id];
             if (p.isAiming && !p.isDead) {
@@ -443,7 +414,6 @@ const Game = {
             }
         }
 
-        // Draw Explosions
         for (let i = this.explosions.length - 1; i >= 0; i--) {
             let exp = this.explosions[i];
             ctx.beginPath(); ctx.arc(exp.x, exp.y, exp.radius, 0, Math.PI * 2); 
