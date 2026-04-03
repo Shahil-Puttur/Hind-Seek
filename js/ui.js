@@ -3,7 +3,7 @@
 const UI = {
     screens: [
         'screen-start', 'screen-menu', 'screen-shop', 'screen-team-setup',
-        'screen-lobby', 'screen-transition', 'screen-game-hud', 'screen-result'
+        'screen-join', 'screen-lobby', 'screen-transition', 'screen-game-hud', 'screen-result'
     ],
 
     showScreen: function(screenId) {
@@ -19,6 +19,9 @@ const UI = {
                 }
             }
         });
+        
+        // Let the window orientation check re-calculate if the warning is needed
+        if(window.checkOrientation) window.checkOrientation();
     },
 
     showAlert: function(text, color) {
@@ -27,9 +30,8 @@ const UI = {
         alertBox.style.color = color;
         alertBox.classList.remove('hidden');
         
-        // Retrigger CSS animation
         alertBox.classList.remove('show-alert');
-        void alertBox.offsetWidth; // trigger reflow
+        void alertBox.offsetWidth; 
         alertBox.classList.add('show-alert');
         
         if (this.alertTimeout) clearTimeout(this.alertTimeout);
