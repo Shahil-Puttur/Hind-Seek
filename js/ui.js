@@ -2,9 +2,11 @@
 
 const UI = {
     screens: [
-        'screen-start', 'screen-menu', 'screen-shop', 'screen-team-setup',
-        'screen-join', 'screen-lobby', 'screen-transition', 'screen-game-hud', 'screen-result'
+        'screen-loading', 'screen-start', 'screen-menu', 'screen-shop', 'screen-friends-menu', 
+        'screen-host-options', 'screen-join', 'screen-lobby', 'screen-transition', 
+        'screen-blocker', 'screen-game-hud', 'screen-result', 'screen-paper', 'screen-keypad'
     ],
+    enteredPwd: "",
 
     showScreen: function(screenId) {
         this.screens.forEach(id => {
@@ -19,8 +21,6 @@ const UI = {
                 }
             }
         });
-        
-        // Let the window orientation check re-calculate if the warning is needed
         if(window.checkOrientation) window.checkOrientation();
     },
 
@@ -49,9 +49,9 @@ const UI = {
         document.getElementById('hud-timer').innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
     },
 
-    updateHUDTeams: function(teamAAlive, teamATotal, teamBAlive, teamBTotal) {
-        document.getElementById('hud-team-a-status').innerText = `Team A: ${teamAAlive}/${teamATotal} Alive`;
-        document.getElementById('hud-team-b-status').innerText = `Team B: ${teamBAlive}/${teamBTotal} Alive`;
+    updateHUDTeams: function(foxHP, pandaHP) {
+        document.getElementById('hud-fox-stats').innerText = `Fox HP: ${Math.max(0, foxHP)}`;
+        document.getElementById('hud-panda-stats').innerText = `Panda HP: ${Math.max(0, pandaHP)}`;
     },
 
     setSpectatorMode: function(isSpectator) {
@@ -73,5 +73,65 @@ const UI = {
         const err = document.getElementById('auth-error');
         err.innerText = msg;
         err.classList.remove('hidden');
+    },
+
+    // --- PUZZLE OVERLAYS ---
+    showPaper: function(password) {
+        document.getElementById('paper-pwd-text').innerText = password;
+        document.getElementById('screen-paper').classList.remove('hidden');
+        document.getElementById('screen-paper').classList.add('active');
+    },
+
+    showKeypad: function() {
+        this.enteredPwd = "";
+        this.updatePwdDisplay();
+        document.getElementById('screen-keypad').classList.remove('hidden');
+        document.getElementById('screen-keypad').classList.add('active');
+    },
+
+    closeOverlays: function() {
+        document.getElementById('screen-paper').classList.add('hidden');
+        document.getElementById('screen-paper').classList.remove('active');
+        document.getElementById('screen-keypad').classList.add('hidden');
+        document.getElementById('screen-keypad').classList.remove('active');
+    },
+
+    pressKey: function(k) {
+        if (k === 'C') {
+            this.enteredPwd = "";
+        } else if (this.enteredPwd.length < 4) {
+            this.enteredPwd += k.toString();
+        }
+        this.updatePwdDisplay();
+        
+        if (this.enteredPwd.length === 4) {
+            setTimeout(() => this.submitPassword(), 150);
+        }
+    },
+
+    updatePwdDisplay: function() {
+        document.getElementById('pwd-display').innerText = this.enteredPwd.padEnd(4, "_").split("").join(" ");
+    },
+
+    submitPassword: function() {
+        if(this.enteredPwd.length === 0) return;
+        
+        if(this.enteredPwd === Game.safePassword) {
+            this.closeOverlays();
+            this.showAlert("💉 SAFE UNLOCKED! HEALTH +30", "#2ecc71");
+            Game.unlockSafe();
+        } else {
+            let pwdDisp = document.getElementById('pwd-display');
+            pwdDisp.innerText = "WRONG!"; 
+            pwdDisp.style.color = "#e74c3c";
+            this.showAlert("INCORRECT CODE!", "#e74c3c");
+            
+            setTimeout(() => {
+                this.enteredPwd = ""; 
+                pwdDisp.style.color = "#2c3e50"; 
+                this.updatePwdDisplay();
+                this.closeOverlays();
+            }, 800);
+        }
     }
 };
