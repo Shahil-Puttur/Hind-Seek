@@ -14,7 +14,7 @@
 </head>
 <body>
 
-    <!-- PORTRAIT WARNING LAYER -->
+    <!-- PORTRAIT WARNING LAYER (Now only triggers during gameplay/countdown) -->
     <div id="orientation-warning">
         <h1>📱</h1>
         <h2>ROTATE YOUR PHONE</h2>
@@ -37,9 +37,15 @@
             <p class="subtitle">Team Battle Edition</p>
             
             <div class="setup-box">
-                <input type="text" id="input-username" placeholder="Enter Username" maxlength="12">
-                <button class="main-btn btn-orange" id="btn-login">ENTER GAME</button>
-                <p id="auth-error" class="error-text hidden">Error message</p>
+                <p style="font-size: 15px; margin-top: -5px; color: #2c3e50; font-weight: bold;">Login or Register</p>
+                <input type="text" id="input-username" placeholder="Username" maxlength="12">
+                <input type="password" id="input-password" placeholder="Password" maxlength="20">
+                <div style="display: flex; gap: 10px; margin-top: 5px;">
+                    <button class="main-btn btn-blue" id="btn-login" style="flex: 1;">Login</button>
+                    <button class="main-btn btn-green" id="btn-register" style="flex: 1;">Register</button>
+                </div>
+                <p id="auth-error" class="error-text hidden mt-5">Error message</p>
+                <p id="auth-status" class="text-blue font-bold hidden mt-5">Checking account...</p>
             </div>
         </div>
 
@@ -118,11 +124,9 @@
                 <div class="teams-container mt-10">
                     <div class="team-list" id="list-team-a">
                         <h3 class="text-orange" id="lobby-name-team-a">Team A</h3>
-                        <!-- Player rows populated by JS -->
                     </div>
                     <div class="team-list" id="list-team-b">
                         <h3 class="text-blue" id="lobby-name-team-b">Team B</h3>
-                        <!-- Player rows populated by JS -->
                     </div>
                 </div>
 
@@ -137,7 +141,7 @@
         <div id="screen-transition" class="screen bg-dark hidden">
             <h1 id="transition-title" class="text-gold title-large">ROUND 1</h1>
             <h2 id="transition-subtitle" class="text-white mt-10">Team A (Fox) vs Team B (Panda)</h2>
-            <div id="transition-countdown" class="text-gold title-huge mt-10">5</div>
+            <div id="transition-countdown" class="text-gold title-huge mt-10">15</div>
             <p id="transition-tip" class="text-white italic mt-10">Get ready!</p>
         </div>
 
@@ -192,7 +196,7 @@
 
     </div>
 
-    <!-- Scripts (Order is important) -->
+    <!-- Scripts -->
     <script src="js/config.js"></script>
     <script src="js/utils.js"></script>
     <script src="js/economy.js"></script>
@@ -205,4 +209,4 @@
     <script src="js/game.js"></script>
     <script src="js/main.js"></script>
 </body>
-</html>
+                    </html>
