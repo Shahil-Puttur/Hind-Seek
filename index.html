@@ -3,18 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Hide & Hunt - Team Battle</title>
+    <title>Hide & Hunt - Ultimate</title>
     
     <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
 
-    <!-- Stylesheet -->
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
-    <!-- PORTRAIT WARNING LAYER (Now only triggers during gameplay/countdown) -->
     <div id="orientation-warning">
         <h1>📱</h1>
         <h2>ROTATE YOUR PHONE</h2>
@@ -23,33 +21,37 @@
 
     <!-- GAME CANVAS -->
     <canvas id="gameCanvas"></canvas>
-
-    <!-- FULLSCREEN FALLBACK BUTTON -->
     <button id="btn-fullscreen">🔲 Fullscreen</button>
 
-    <!-- UI LAYER (Screens) -->
+    <!-- UI LAYER -->
     <div id="ui-container">
 
-        <!-- 1. START / LOGIN SCREEN -->
-        <div id="screen-start" class="screen active bg-gradient">
+        <!-- 0. LOADING SCREEN (10 Seconds) -->
+        <div id="screen-loading" class="screen bg-grass active">
+            <h1 class="game-title">HIDE & HUNT</h1>
+            <div class="loading-box">
+                <div id="loading-bar"></div>
+            </div>
+            <p id="loading-text" class="mt-10 font-bold text-dark">Loading Assets... 0%</p>
+        </div>
+
+        <!-- 1. AUTH SCREEN -->
+        <div id="screen-start" class="screen bg-gradient hidden">
             <div id="start-logo">🦊⚔️🐼</div>
             <h1 class="game-title">HIDE & HUNT</h1>
-            <p class="subtitle">Team Battle Edition</p>
-            
             <div class="setup-box">
-                <p style="font-size: 15px; margin-top: -5px; color: #2c3e50; font-weight: bold;">Login or Register</p>
+                <p class="subtitle text-dark" style="margin-bottom: 5px;">Login or Register</p>
                 <input type="text" id="input-username" placeholder="Username" maxlength="12">
                 <input type="password" id="input-password" placeholder="Password" maxlength="20">
-                <div style="display: flex; gap: 10px; margin-top: 5px;">
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
                     <button class="main-btn btn-blue" id="btn-login" style="flex: 1;">Login</button>
                     <button class="main-btn btn-green" id="btn-register" style="flex: 1;">Register</button>
                 </div>
                 <p id="auth-error" class="error-text hidden mt-5">Error message</p>
-                <p id="auth-status" class="text-blue font-bold hidden mt-5">Checking account...</p>
             </div>
         </div>
 
-        <!-- 2. MAIN MENU SCREEN -->
+        <!-- 2. MAIN MENU -->
         <div id="screen-menu" class="screen bg-grass hidden">
             <div class="top-bar">
                 <div class="user-info">👤 <span id="display-username">Player</span></div>
@@ -58,139 +60,155 @@
 
             <div class="setup-box">
                 <h2>MAIN MENU</h2>
-                <button class="main-btn btn-blue" id="btn-menu-host">👑 Host Match</button>
-                <button class="main-btn btn-green mt-5" id="btn-menu-join">🤝 Join Friend</button>
-                <div class="divider"></div>
-                <button class="main-btn btn-gray" id="btn-menu-offline">🤖 Practice Offline</button>
-                <button class="main-btn btn-orange mt-10" id="btn-menu-shop">🛒 Shop</button>
+                <button class="main-btn btn-blue" id="btn-menu-online">🌐 Play Online (1v1)</button>
+                <button class="main-btn btn-green mt-5" id="btn-menu-friends">🤝 Play With Friends</button>
+                <button class="main-btn btn-gray mt-5" id="btn-menu-offline">🤖 Offline Training</button>
             </div>
         </div>
 
-        <!-- 3. SHOP SCREEN -->
-        <div id="screen-shop" class="screen bg-dark hidden">
+        <!-- 3. PLAY WITH FRIENDS SUB-MENU -->
+        <div id="screen-friends-menu" class="screen bg-grass hidden">
             <div class="setup-box">
-                <h2>SHOP</h2>
-                <p>Coins: <span id="shop-coins" class="text-gold">0</span></p>
-                <div class="shop-items">
-                    <div class="shop-item">
-                        <span>Cool Hat (Visual)</span>
-                        <button class="main-btn btn-blue shop-btn" data-cost="100">100 🪙</button>
-                    </div>
+                <h2>FRIENDS MENU</h2>
+                <button class="main-btn btn-orange" id="btn-friend-host">👑 Host Game</button>
+                <button class="main-btn btn-blue mt-5" id="btn-friend-join">🚪 Join Room</button>
+                <button class="main-btn btn-red mt-10" id="btn-friends-back">Back</button>
+            </div>
+        </div>
+
+        <!-- 4. HOST GAME OPTIONS -->
+        <div id="screen-host-options" class="screen bg-grass hidden">
+            <div class="setup-box">
+                <h2>HOST SETTINGS</h2>
+                <button class="main-btn btn-blue mode-btn" data-mode="1v1">1 vs 1</button>
+                <button class="main-btn btn-blue mt-5 mode-btn" data-mode="2v2">2 vs 2</button>
+                <button class="main-btn btn-blue mt-5 mode-btn" data-mode="3v3">3 vs 3</button>
+                
+                <div id="team-names-box" class="hidden mt-10">
+                    <label>Team 1 Name:</label>
+                    <input type="text" id="input-team-a" value="Team A">
+                    <label class="mt-5">Team 2 Name:</label>
+                    <input type="text" id="input-team-b" value="Team B">
+                    <button class="main-btn btn-green mt-10" id="btn-confirm-host">Create Room</button>
                 </div>
-                <button class="main-btn btn-red mt-10" id="btn-shop-back">Back to Menu</button>
+                
+                <button class="main-btn btn-red mt-10" id="btn-host-back">Back</button>
             </div>
         </div>
 
-        <!-- 4. TEAM SETUP SCREEN (Host / Offline) -->
-        <div id="screen-team-setup" class="screen bg-grass hidden">
-            <div class="setup-box">
-                <h2>TEAM SETUP</h2>
-                <p class="subtitle text-dark">Name your squads!</p>
-                
-                <label>Team A (Round 1 Fox)</label>
-                <input type="text" id="input-team-a" placeholder="e.g. Red Foxes" maxlength="15" value="Team A">
-                
-                <label class="mt-10">Team B (Round 1 Panda)</label>
-                <input type="text" id="input-team-b" placeholder="e.g. Blue Pandas" maxlength="15" value="Team B">
-                
-                <button class="main-btn btn-green mt-10" id="btn-confirm-teams">Create Match</button>
-                <button class="main-btn btn-gray mt-10" id="btn-team-back">Back</button>
-            </div>
-        </div>
-
-        <!-- 4.5. JOIN FRIEND SCREEN -->
+        <!-- JOIN ROOM -->
         <div id="screen-join" class="screen bg-grass hidden">
             <div class="setup-box">
-                <h2>JOIN FRIEND</h2>
+                <h2>JOIN ROOM</h2>
                 <input type="text" id="input-room-id" placeholder="ROOM ID" maxlength="6" style="text-transform: uppercase;">
-                <input type="text" id="input-room-pass" placeholder="PASSWORD" maxlength="4">
-                
+                <input type="password" id="input-room-pass" placeholder="PASSWORD" maxlength="4">
                 <button class="main-btn btn-green mt-10" id="btn-submit-join">Join Match</button>
                 <button class="main-btn btn-red mt-10" id="btn-join-back">Back</button>
             </div>
         </div>
 
-        <!-- 5. MATCHMAKING / LOBBY SCREEN -->
+        <!-- LOBBY -->
         <div id="screen-lobby" class="screen bg-grass hidden">
             <div class="setup-box">
                 <h2 id="lobby-title">MATCHMAKING</h2>
-                
                 <div id="room-info" class="hidden room-info-box">
-                    <p>Room ID: <strong id="display-room-id" class="text-orange">---</strong></p>
-                    <p>Password: <strong id="display-room-pass" class="text-blue">---</strong></p>
-                    <button class="main-btn btn-gray small-btn w-full mt-5" id="btn-copy-room">Copy Details</button>
+                    <p>Room: <strong id="display-room-id" class="text-orange">---</strong> | Pass: <strong id="display-room-pass" class="text-blue">---</strong></p>
                 </div>
-
-                <div class="teams-container mt-10">
-                    <div class="team-list" id="list-team-a">
-                        <h3 class="text-orange" id="lobby-name-team-a">Team A</h3>
-                    </div>
-                    <div class="team-list" id="list-team-b">
-                        <h3 class="text-blue" id="lobby-name-team-b">Team B</h3>
-                    </div>
-                </div>
-
-                <p id="lobby-status" class="text-red mt-10 font-bold">Waiting for players...</p>
                 
+                <div class="teams-container mt-10" id="lobby-teams-ui">
+                    <div class="team-list" id="list-team-a"><h3 class="text-orange" id="lobby-name-team-a">Team 1</h3></div>
+                    <div class="team-list" id="list-team-b"><h3 class="text-blue" id="lobby-name-team-b">Team 2</h3></div>
+                </div>
+
+                <p id="lobby-status" class="text-red mt-10 font-bold">Waiting...</p>
                 <button class="main-btn btn-green mt-10 hidden" id="btn-start-match">Start Match</button>
                 <button class="main-btn btn-red mt-10" id="btn-leave-lobby">Leave Lobby</button>
             </div>
         </div>
 
-        <!-- 6. ROUND TRANSITION SCREEN -->
+        <!-- TRANSITION / COUNTDOWN -->
         <div id="screen-transition" class="screen bg-dark hidden">
             <h1 id="transition-title" class="text-gold title-large">ROUND 1</h1>
-            <h2 id="transition-subtitle" class="text-white mt-10">Team A (Fox) vs Team B (Panda)</h2>
-            <div id="transition-countdown" class="text-gold title-huge mt-10">15</div>
-            <p id="transition-tip" class="text-white italic mt-10">Get ready!</p>
+            <h2 id="transition-subtitle" class="text-white mt-10">Fox vs Panda</h2>
+            <div id="transition-countdown" class="text-gold title-huge mt-10">5</div>
         </div>
 
-        <!-- 7. IN-GAME HUD -->
+        <!-- PANDA WAITING BLOCKER -->
+        <div id="screen-blocker" class="screen bg-dark hidden" style="z-index: 100;">
+            <h2 class="text-gold title-large">FOX IS HIDING ITEMS!</h2>
+            <p class="text-white mt-10 text-lg">Wait for the timer to finish...</p>
+            <div id="blocker-timer" class="text-white title-huge mt-10">01:00</div>
+        </div>
+
+        <!-- IN-GAME HUD -->
         <div id="screen-game-hud" class="screen pointer-events-none hidden">
-            <!-- Top Bar -->
             <div id="hud-top">
                 <div id="hud-timer">00:00</div>
-                <div id="hud-round" class="text-gold text-sm">ROUND 1</div>
-                <div id="hud-diamonds" class="text-blue text-md hidden">DIAMONDS: 0/5</div>
+                <div id="hud-phase" class="text-gold text-sm">HIDING PHASE</div>
             </div>
 
-            <!-- Team Scores / Hearts -->
             <div id="hud-teams">
-                <div class="hud-team-box bg-orange-trans" id="hud-team-a-status">Team A: 3/3 Alive</div>
-                <div class="hud-team-box bg-blue-trans" id="hud-team-b-status">Team B: 3/3 Alive</div>
+                <div class="hud-team-box bg-orange-trans" id="hud-fox-stats">Fox HP: 100</div>
+                <div class="hud-team-box bg-blue-trans" id="hud-panda-stats">Panda HP: 100</div>
             </div>
 
-            <!-- Spectator Notice -->
-            <div id="hud-spectator" class="hidden">
-                SPECTATING (0 Hearts Remaining)
-            </div>
+            <div id="hud-spectator" class="hidden">SPECTATING</div>
 
-            <!-- Controls (Pointer Events Auto) -->
             <div id="controls-layer" class="pointer-events-auto">
+                <!-- Fox Items -->
                 <button id="btn-toggle-item" class="hidden">💎 Place: DIAMOND (5)</button>
                 
-                <div id="joystick-zone">
-                    <div id="joystick-knob"></div>
-                </div>
-                
-                <div id="right-controls">
-                    <button class="action-btn bg-red" id="btn-shoot">🔫</button>
-                </div>
+                <!-- Panda Items -->
+                <button id="btn-throw-freeze" class="hidden action-btn" style="background:#0984e3; left:15px; bottom:15px; position:absolute;">🧨</button>
+
+                <div id="joystick-zone"><div id="joystick-knob"></div></div>
+                <div id="right-controls"><button class="action-btn bg-red" id="btn-shoot">🔫</button></div>
             </div>
 
             <div id="alert-text" class="hidden">Nothing here...</div>
         </div>
 
-        <!-- 8. MATCH RESULT SCREEN -->
+        <!-- PUZZLE OVERLAYS -->
+        <div id="screen-paper" class="screen bg-dark hidden" style="z-index: 150;">
+            <div class="paper-note">
+                <div style="font-size: 18px; margin-bottom: 10px; color: #747d8c;">SAFE CODE:</div>
+                <div id="paper-pwd-text">1234</div>
+            </div>
+            <button class="main-btn btn-blue pointer-events-auto mt-10" onclick="UI.closeOverlays()">Close</button>
+        </div>
+
+        <div id="screen-keypad" class="screen bg-dark hidden" style="z-index: 150;">
+            <div class="setup-box pointer-events-auto" style="background: #95a5a6;">
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <button class="main-btn btn-red" style="flex: 1; padding: 10px;" onclick="UI.closeOverlays()">CANCEL</button>
+                    <button class="main-btn btn-green" style="flex: 1; padding: 10px;" onclick="UI.submitPassword()">DONE</button>
+                </div>
+                <h2 style="color: white; font-size: 24px;">UNLOCK SAFE</h2>
+                <div id="pwd-display" style="height: 50px; font-size: 30px; margin-bottom: 5px; background:#ecf0f1; border-radius:8px; display:flex; align-items:center; justify-content:center; letter-spacing: 5px;">_ _ _ _</div>
+                
+                <div class="keypad-grid">
+                    <button class="key-btn" onclick="UI.pressKey(1)">1</button>
+                    <button class="key-btn" onclick="UI.pressKey(2)">2</button>
+                    <button class="key-btn" onclick="UI.pressKey(3)">3</button>
+                    <button class="key-btn" onclick="UI.pressKey(4)">4</button>
+                    <button class="key-btn" onclick="UI.pressKey(5)">5</button>
+                    <button class="key-btn" onclick="UI.pressKey(6)">6</button>
+                    <button class="key-btn" onclick="UI.pressKey(7)">7</button>
+                    <button class="key-btn" onclick="UI.pressKey(8)">8</button>
+                    <button class="key-btn" onclick="UI.pressKey(9)">9</button>
+                    <button class="key-btn btn-red" onclick="UI.pressKey('C')">C</button>
+                    <button class="key-btn" style="grid-column: span 2;" onclick="UI.pressKey(0)">0</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- MATCH RESULT -->
         <div id="screen-result" class="screen bg-dark hidden">
             <h1 id="result-title" class="title-large text-gold">MATCH OVER</h1>
             <h2 id="result-winner" class="text-white mt-10">Team A Wins!</h2>
-            
             <div class="setup-box mt-10 bg-gray">
-                <p>Total Diamonds Found: <span id="result-diamonds" class="font-bold">5</span></p>
                 <p>Coins Earned: <span id="result-coins" class="text-gold font-bold">+50 🪙</span></p>
             </div>
-            
             <button class="main-btn btn-green mt-10" id="btn-result-menu">Return to Menu</button>
         </div>
 
@@ -209,4 +227,4 @@
     <script src="js/game.js"></script>
     <script src="js/main.js"></script>
 </body>
-                    </html>
+    </html>
