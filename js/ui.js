@@ -1,135 +1,92 @@
 // js/ui.js
-
 const UI = {
-    screens: [
-        'screen-loading', 'screen-start', 'screen-menu', 'screen-shop', 'screen-friends-menu', 
-        'screen-host-options', 'screen-join', 'screen-lobby', 'screen-transition', 
-        'screen-blocker', 'screen-game-hud', 'screen-result', 'screen-paper', 'screen-keypad'
-    ],
     enteredPwd: "",
-
-    showScreen: function(screenId) {
-        this.screens.forEach(id => {
-            const el = document.getElementById(id);
-            if (el) {
-                if (id === screenId) {
-                    el.classList.remove('hidden');
-                    el.classList.add('active');
-                } else {
-                    el.classList.add('hidden');
-                    el.classList.remove('active');
-                }
-            }
-        });
-        if(window.checkOrientation) window.checkOrientation();
+    alertTimeout: null,
+    
+    init() {
+        this.checkOrientation();
+        window.addEventListener('resize', () => this.checkOrientation());
     },
 
-    showAlert: function(text, color) {
+    showScreen(screenId) {
+        const screens = document.querySelectorAll('.screen');
+        screens.forEach(s => {
+            if(s.id === screenId) {
+                s.classList.remove('hidden'); s.classList.add('active');
+            } else {
+                s.classList.remove('active'); s.classList.add('hidden');
+            }
+        });
+    },
+
+    checkOrientation() {
+        const warning = document.getElementById('orientation-warning');
+        if (window.innerHeight > window.innerWidth) warning.style.display = 'flex';
+        else warning.style.display = 'none';
+    },
+
+    showAlert(text, color) {
         const alertBox = document.getElementById('alert-text');
-        alertBox.innerText = text;
+        alertBox.innerText = text; 
         alertBox.style.color = color;
-        alertBox.classList.remove('hidden');
-        
-        alertBox.classList.remove('show-alert');
-        void alertBox.offsetWidth; 
-        alertBox.classList.add('show-alert');
+        alertBox.classList.remove('hidden', 'show-alert');
+        void alertBox.offsetWidth; // Force DOM Reflow
+        alertBox.classList.add('active', 'show-alert');
         
         if (this.alertTimeout) clearTimeout(this.alertTimeout);
         this.alertTimeout = setTimeout(() => {
-            alertBox.classList.remove('show-alert');
-            setTimeout(() => alertBox.classList.add('hidden'), 300);
+            alertBox.classList.remove('show-alert', 'active');
+            alertBox.classList.add('hidden');
         }, 1500);
     },
 
-    updateHUDTimer: function(msLeft) {
-        if (msLeft < 0) msLeft = 0;
-        let leftSecs = Math.floor(msLeft / 1000);
-        let m = Math.floor(leftSecs / 60);
-        let s = leftSecs % 60;
-        document.getElementById('hud-timer').innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
-    },
-
-    updateHUDTeams: function(foxHP, pandaHP) {
-        document.getElementById('hud-fox-stats').innerText = `Fox HP: ${Math.max(0, foxHP)}`;
-        document.getElementById('hud-panda-stats').innerText = `Panda HP: ${Math.max(0, pandaHP)}`;
-    },
-
-    setSpectatorMode: function(isSpectator) {
-        const specEl = document.getElementById('hud-spectator');
-        const shootBtn = document.getElementById('btn-shoot');
-        const toggleBtn = document.getElementById('btn-toggle-item');
+    updateHUD(timeLeft, phase, foxHP, pandaHP) {
+        let m = Math.floor(timeLeft / 60); let s = timeLeft % 60;
+        document.getElementById('hud-timer').innerText = `${m}:${s < 10 ? '0':''}${s}`;
+        document.getElementById('hud-phase').innerText = phase.toUpperCase();
         
-        if (isSpectator) {
-            specEl.classList.remove('hidden');
-            shootBtn.classList.add('hidden');
-            toggleBtn.classList.add('hidden');
-        } else {
-            specEl.classList.add('hidden');
-            shootBtn.classList.remove('hidden');
-        }
+        document.getElementById('hud-fox-stats').innerText = `Foxes: ${foxHP} HP`;
+        document.getElementById('hud-panda-stats').innerText = `Pandas: ${pandaHP} HP`;
     },
 
-    showError: function(msg) {
-        const err = document.getElementById('auth-error');
-        err.innerText = msg;
-        err.classList.remove('hidden');
+    closeOverlays() {
+        document.getElementById('screen-paper').classList.remove('active');
+        document.getElementById('screen-paper').classList.add('hidden');
+        document.getElementById('screen-keypad').classList.remove('active');
+        document.getElementById('screen-keypad').classList.add('hidden');
     },
 
-    // --- PUZZLE OVERLAYS ---
-    showPaper: function(password) {
-        document.getElementById('paper-pwd-text').innerText = password;
-        document.getElementById('screen-paper').classList.remove('hidden');
-        document.getElementById('screen-paper').classList.add('active');
-    },
-
-    showKeypad: function() {
+    showKeypad() {
         this.enteredPwd = "";
         this.updatePwdDisplay();
         document.getElementById('screen-keypad').classList.remove('hidden');
         document.getElementById('screen-keypad').classList.add('active');
     },
 
-    closeOverlays: function() {
-        document.getElementById('screen-paper').classList.add('hidden');
-        document.getElementById('screen-paper').classList.remove('active');
-        document.getElementById('screen-keypad').classList.add('hidden');
-        document.getElementById('screen-keypad').classList.remove('active');
-    },
-
-    pressKey: function(k) {
-        if (k === 'C') {
-            this.enteredPwd = "";
-        } else if (this.enteredPwd.length < 4) {
+    pressKey(k) {
+        if (k === 'C') { this.enteredPwd = ""; } 
+        else if (this.enteredPwd.length < 4) {
             this.enteredPwd += k.toString();
+            if (this.enteredPwd.length === 4) { setTimeout(() => this.submitPassword(), 150); }
         }
         this.updatePwdDisplay();
-        
-        if (this.enteredPwd.length === 4) {
-            setTimeout(() => this.submitPassword(), 150);
-        }
     },
 
-    updatePwdDisplay: function() {
+    updatePwdDisplay() {
         document.getElementById('pwd-display').innerText = this.enteredPwd.padEnd(4, "_").split("").join(" ");
     },
 
-    submitPassword: function() {
-        if(this.enteredPwd.length === 0) return;
-        
-        if(this.enteredPwd === Game.safePassword) {
+    submitPassword() {
+        if (this.enteredPwd === window.Game.safePassword) {
             this.closeOverlays();
-            this.showAlert("💉 SAFE UNLOCKED! HEALTH +30", "#2ecc71");
-            Game.unlockSafe();
+            this.showAlert("💉 TEAM HEAL +30%!", "#2ecc71");
+            Network.triggerSafeUnlock();
         } else {
-            let pwdDisp = document.getElementById('pwd-display');
-            pwdDisp.innerText = "WRONG!"; 
-            pwdDisp.style.color = "#e74c3c";
+            let disp = document.getElementById('pwd-display');
+            disp.innerText = "WRONG!"; disp.style.color = "#e74c3c";
             this.showAlert("INCORRECT CODE!", "#e74c3c");
-            
             setTimeout(() => {
-                this.enteredPwd = ""; 
-                pwdDisp.style.color = "#2c3e50"; 
-                this.updatePwdDisplay();
+                this.enteredPwd = ""; disp.style.color = "#2c3e50"; this.updatePwdDisplay();
                 this.closeOverlays();
             }, 800);
         }
