@@ -1,89 +1,72 @@
 // js/bot.js
+const Bot = {
+    active: false,
+    bots: [],
+    
+    initOfflineMatch() {
+        GlobalState.gameMode = 'offline';
+        GlobalState.myTeam = 'teamA'; // Player is Fox
+        
+        // Mock the state changes
+        Game.handleStateChange({ phase: 'transition' });
+        setTimeout(() => Game.handleStateChange({ phase: 'hiding' }), 3000);
+        setTimeout(() => {
+            Game.handleStateChange({ phase: 'playing' });
+            this.spawnBots();
+        }, 10000); // 10 second hiding for offline
+    },
 
-class BotController {
-    constructor(playerInstance) {
-        this.player = playerInstance;
-        this.state = 'wander'; 
-        this.targetNode = { x: 0, y: 0 };
-        this.actionTimer = 0;
-        this.input = { x: 0, y: 0 };
-        this.pickNewTarget();
-    }
-
-    pickNewTarget() {
-        this.targetNode = {
-            x: (Math.random() * (CONFIG.MAP_SIZE - 4) + 2) * CONFIG.TILE_SIZE,
-            y: (Math.random() * (CONFIG.MAP_SIZE - 4) + 2) * CONFIG.TILE_SIZE
-        };
-    }
-
-    update(dt, worldObjects, allPlayers) {
-        if (this.player.isDead || this.player.hp <= 0) return;
-
-        // BOTS STOP DURING HIDING PHASE
-        if (Game.phase === 'hiding') {
-            this.input.x = 0; this.input.y = 0; this.player.isAiming = false;
-            this.player.update(dt, this.input, worldObjects);
-            return;
+    spawnBots() {
+        this.active = true;
+        // Spawn 3 Pandas
+        for(let i=0; i<3; i++) {
+            let botId = 'bot_' + i;
+            let p = new Player(botId, `Bot ${i+1}`, 'teamB', false);
+            p.x = 1000 + (i*100); p.y = 1000; p.targetX = p.x; p.targetY = p.y;
+            Game.players[botId] = p;
+            this.bots.push(p);
         }
+    },
 
-        this.actionTimer -= dt;
-        this.input.x = 0; this.input.y = 0; this.player.isAiming = false;
+    update(dt) {
+        if(Game.phase !== 'playing') return;
+        
+        let player = Game.localPlayer;
+        if (!player || player.isDead) return;
 
-        let nearestEnemy = this.findNearestEnemy(allPlayers);
-        let distToEnemy = nearestEnemy ? Utils.getDistance(this.player.x, this.player.y, nearestEnemy.x, nearestEnemy.y) : Infinity;
-
-        if (this.player.role === 'Panda') {
-            if (nearestEnemy && distToEnemy < 400) {
-                this.state = 'chase';
-                this.targetNode = { x: nearestEnemy.x, y: nearestEnemy.y };
-                if (distToEnemy < 200 && this.actionTimer <= 0) {
-                    this.player.isAiming = true;
-                    this.wantsToShoot = true; 
-                    this.actionTimer = 1.5; 
-                } else {
-                    this.wantsToShoot = false;
+        this.bots.forEach(bot => {
+            if (bot.isDead) return;
+            
+            // Simple Seek AI
+            let dist = Utils.distance(bot.x, bot.y, player.x, player.y);
+            if (dist > 150) {
+                let dx = player.x - bot.x; let dy = player.y - bot.y;
+                let len = Math.sqrt(dx*dx + dy*dy);
+                bot.targetX = bot.x + (dx/len) * 200;
+                bot.targetY = bot.y + (dy/len) * 200;
+            } else {
+                // Shoot!
+                if(Math.random() < 0.02) {
+                    Game.explosions.push({ x: player.x, y: player.y, r: 5, maxR: 40, life: 1.0 });
+                    player.hp -= 10;
+                    UI.showAlert("YOU WERE HIT!", "#e74c3c");
+                    if(player.hp <= 0) Game.handleStateChange({ phase: 'finished', winner: 'Pandas (Bots)' });
                 }
-            } else if (distToEnemy >= 400 && this.state === 'chase') {
-                this.state = 'wander'; this.pickNewTarget();
             }
-        } else {
-            if (nearestEnemy && distToEnemy < 350) {
-                this.state = 'flee';
-                let dirX = this.player.x - nearestEnemy.x;
-                let dirY = this.player.y - nearestEnemy.y;
-                let len = Math.sqrt(dirX*dirX + dirY*dirY);
-                this.targetNode = { x: this.player.x + (dirX/len)*100, y: this.player.y + (dirY/len)*100 };
-            } else if (this.state === 'flee') {
-                this.state = 'wander'; this.pickNewTarget();
+        });
+    },
+
+    handleShootEvent(hitX, hitY) {
+        Game.explosions.push({ x: hitX, y: hitY, r: 5, maxR: 40, life: 1.0 });
+        this.bots.forEach(bot => {
+            if(!bot.isDead && Utils.distance(hitX, hitY, bot.x, bot.y) < 60) {
+                bot.hp -= 34; // 3 hits to kill
+                bot.isDead = bot.hp <= 0;
+                UI.showAlert("BOT HIT!", "#f1c40f");
             }
-        }
-
-        if (this.state === 'wander' && this.actionTimer <= 0) {
-            let distToTarget = Utils.getDistance(this.player.x, this.player.y, this.targetNode.x, this.targetNode.y);
-            if (distToTarget < 50) {
-                this.pickNewTarget(); this.actionTimer = 2.0; 
-            }
-        }
-
-        if (this.actionTimer <= 0 || this.state === 'chase' || this.state === 'flee') {
-            let dx = this.targetNode.x - this.player.x; let dy = this.targetNode.y - this.player.y;
-            let len = Math.sqrt(dx*dx + dy*dy);
-            if (len > 5) { this.input.x = dx / len; this.input.y = dy / len; }
-        }
-
-        this.player.update(dt, this.input, worldObjects);
+        });
+        
+        let aliveBots = this.bots.filter(b => !b.isDead).length;
+        if(aliveBots === 0) Game.handleStateChange({ phase: 'finished', winner: 'Foxes (Player)' });
     }
-
-    findNearestEnemy(players) {
-        let nearest = null, minDist = Infinity;
-        for(let key in players) {
-            let p = players[key];
-            if(!p.isDead && p.hp > 0 && p.teamId !== this.player.teamId) {
-                let d = Utils.getDistance(this.player.x, this.player.y, p.x, p.y);
-                if(d < minDist) { minDist = d; nearest = p; }
-            }
-        }
-        return nearest;
-    }
-            }
+};
