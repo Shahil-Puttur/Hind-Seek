@@ -5,6 +5,7 @@ const UI = {
     
     init() {
         this.checkOrientation();
+        // Check orientation on resize or rotation
         window.addEventListener('resize', () => this.checkOrientation());
     },
 
@@ -17,12 +18,25 @@ const UI = {
                 s.classList.remove('active'); s.classList.add('hidden');
             }
         });
+        
+        // Re-check orientation whenever we change screens
+        this.checkOrientation();
     },
 
     checkOrientation() {
         const warning = document.getElementById('orientation-warning');
-        if (window.innerHeight > window.innerWidth) warning.style.display = 'flex';
-        else warning.style.display = 'none';
+        
+        // Think like a Gamer: Only force Landscape when the actual match starts!
+        const activePhases = ['transition', 'hiding', 'playing'];
+        const isGameActive = window.Game && activePhases.includes(window.Game.phase);
+
+        // If the match is running AND the phone is in Portrait -> Show Warning
+        if (isGameActive && window.innerHeight > window.innerWidth) {
+            warning.style.display = 'flex';
+        } else {
+            // Otherwise (Menus, Lobby, or already in Landscape) -> Hide Warning
+            warning.style.display = 'none';
+        }
     },
 
     showAlert(text, color) {
@@ -30,7 +44,7 @@ const UI = {
         alertBox.innerText = text; 
         alertBox.style.color = color;
         alertBox.classList.remove('hidden', 'show-alert');
-        void alertBox.offsetWidth; // Force reflow
+        void alertBox.offsetWidth; // Force DOM reflow
         alertBox.classList.add('active', 'show-alert');
         
         if (this.alertTimeout) clearTimeout(this.alertTimeout);
@@ -40,7 +54,6 @@ const UI = {
         }, 1500);
     },
 
-    // Updated to handle new Inventory and HP rules
     updateHUD(timeLeft, phase, inventory) {
         // Timer
         let m = Math.floor(Math.max(0, timeLeft) / 60); 
@@ -80,6 +93,9 @@ const UI = {
                 freezeBtn.classList.add('hidden');
             }
         }
+        
+        // Trigger a check just in case Phase changed
+        this.checkOrientation();
     },
 
     closeOverlays() {
