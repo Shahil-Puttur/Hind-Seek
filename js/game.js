@@ -1,16 +1,11 @@
 // js/game.js
 const Game = {
-    canvas: null, ctx: null,
-    lastTime: 0,
-    players: {},
-    localPlayer: null,
-    worldObjects: {},
-    explosions: [],
+    canvas: null, ctx: null, lastTime: 0,
+    players: {}, localPlayer: null,
+    worldObjects: {}, explosions: [],
     camera: { x: 0, y: 0, shake: 0 },
-    phase: 'lobby',
-    frozenUntil: 0,
-    safePassword: "0000",
-    myRole: null,
+    phase: 'lobby', myRole: null,
+    lastShootTime: 0, // Fox Cooldown
 
     init() {
         this.canvas = document.getElementById('gameCanvas');
@@ -20,19 +15,13 @@ const Game = {
         requestAnimationFrame((t) => this.loop(t));
     },
 
-    resize() {
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
-    },
+    resize() { this.canvas.width = window.innerWidth; this.canvas.height = window.innerHeight; },
 
     generateMap(seed) {
         Utils.setMapSeed(seed);
         this.worldObjects = {};
-        this.safePassword = Math.floor(Utils.random() * 9000 + 1000).toString();
-        
         let destructibles = ['crate', 'barrel', 'log'];
         let cover = ['tree', 'rock', 'bush'];
-        
         let containerIds = [];
 
         for(let r=0; r<CONFIG.MAP.SIZE; r++) {
@@ -41,7 +30,7 @@ const Game = {
                     this.worldObjects[`wall_${r}_${c}`] = { type: 'tree', x: c*80, y: r*80, size: 80, isSolid: true };
                     continue;
                 }
-                if ((c<4&&r<4) || (c>CONFIG.MAP.SIZE-5 && r>CONFIG.MAP.SIZE-5)) continue; // Spawn areas
+                if ((c<4&&r<4) || (c>CONFIG.MAP.SIZE-5 && r>CONFIG.MAP.SIZE-5)) continue; 
 
                 let rand = Utils.random();
                 let id = `obj_${r}_${c}`;
@@ -54,10 +43,9 @@ const Game = {
             }
         }
         
-        // Procedurally place Safe and Password note
-        if(containerIds.length > 2) {
-            this.worldObjects[containerIds[0]].type = 'safe';
-            this.worldObjects[containerIds[1]].hasPassword = true;
+        // Randomly place Freeze Bombs in containers
+        for(let i=0; i<3; i++) {
+            if(containerIds.length > i) this.worldObjects[containerIds[i]].hasFreezeBomb = true;
         }
     },
 
@@ -67,14 +55,13 @@ const Game = {
         
         if (this.phase === 'transition') {
             UI.showScreen('screen-transition');
-            this.generateMap(Network.roomRef ? 123 : 123); // Replace with state.mapSeed
+            this.generateMap(state.mapSeed || 123); 
         } 
         else if (this.phase === 'hiding') {
             this.setupPlayers();
             UI.showScreen('screen-game-hud');
             if (this.myRole === 'fox') {
-                UI.showAlert("HIDE YOUR DIAMONDS!", "#f1c40f");
-                document.getElementById('btn-toggle-item').classList.remove('hidden');
+                UI.showAlert("HIDE ITEMS! (Diamonds first, then Bombs)", "#f1c40f");
             } else {
                 UI.showScreen('screen-blocker');
             }
@@ -82,13 +69,12 @@ const Game = {
         else if (this.phase === 'playing') {
             UI.showScreen('screen-game-hud');
             document.getElementById('screen-blocker').classList.add('hidden');
-            document.getElementById('btn-toggle-item').classList.add('hidden');
             if(this.myRole === 'fox') UI.showAlert("HUNT THE PANDAS!", "#e74c3c");
-            else UI.showAlert("FIND ALL 5 DIAMONDS!", "#3498db");
+            else UI.showAlert("FIND 5 DIAMONDS!", "#3498db");
         }
         else if (this.phase === 'finished') {
             UI.showScreen('screen-result');
-            document.getElementById('result-winner').innerText = `${state.winner.toUpperCase()} WINS!`;
+            document.getElementById('result-winner').innerText = `${state.winner.toUpperCase()}`;
             this.localPlayer.isDead = true;
         }
     },
@@ -104,88 +90,195 @@ const Game = {
 
     updatePlayers(pData) {
         if(!pData) return;
-        if(Matchmaking) Matchmaking.updateLobbyUI(pData);
+        if(window.Matchmaking) Matchmaking.updateLobbyUI(pData);
         
-        let aliveFox = 0, alivePanda = 0;
+        let alivePanda = 0; let totalPandas = 0;
+        let totalDiamondsFound = 0;
 
         for (let id in pData) {
             let pd = pData[id];
-            if (!this.players[id]) {
-                this.players[id] = new Player(id, pd.name, pd.team, id === GlobalState.myId);
-            }
+            if (!this.players[id]) this.players[id] = new Player(id, pd.name, pd.team, id === GlobalState.myId);
             let p = this.players[id];
             
             p.hp = pd.hp;
             p.isDead = p.hp <= 0;
+            p.inventory.diamondsFound = pd.diamondsFound || 0;
+            p.hasFinished = p.inventory.diamondsFound >= 5;
             
-            if (!p.isDead) { pd.team === 'teamA' ? aliveFox++ : alivePanda++; }
+            if (pd.team === 'teamB') {
+                totalPandas++;
+                if (!p.isDead && !p.hasFinished) alivePanda++;
+                totalDiamondsFound += p.inventory.diamondsFound;
+            }
 
             if (id === GlobalState.myId) {
-                GlobalState.isSpectating = p.isDead;
-                if(p.isDead) document.getElementById('hud-spectator').classList.remove('hidden');
+                GlobalState.isSpectating = p.isDead || p.hasFinished;
+                if(GlobalState.isSpectating) document.getElementById('hud-spectator').classList.remove('hidden');
+                UI.updateHUD(0, this.phase, this.localPlayer.inventory);
             } else {
                 p.targetX = pd.x; p.targetY = pd.y;
                 p.isAiming = pd.isAiming; p.aimDir = pd.aimDir;
             }
         }
         
-        UI.updateHUD(0, this.phase, aliveFox * 100, alivePanda * 100);
-
-        // Server authoritative win condition
+        // Host Checks Win Conditions
         if (GlobalState.isHost && this.phase === 'playing') {
-            if (aliveFox === 0) Network.roomRef.child('state').update({ phase: 'finished', winner: 'Pandas (Foxes Eliminated)' });
-            else if (alivePanda === 0) Network.roomRef.child('state').update({ phase: 'finished', winner: 'Foxes (Pandas Eliminated)' });
+            if (alivePanda === 0 && totalDiamondsFound < (totalPandas * 5)) {
+                Network.roomRef.child('state').update({ phase: 'finished', winner: 'Foxes Win (Pandas Eliminated)' });
+            } else if (totalDiamondsFound >= (totalPandas * 5)) {
+                Network.roomRef.child('state').update({ phase: 'finished', winner: 'Pandas Win (All Diamonds Found)' });
+            }
         }
     },
 
     handleEvent(ev) {
-        if (ev.type === 'shoot') {
+        if (ev.type === 'shoot' || ev.type === 'bomb') {
             this.explosions.push({ x: ev.x, y: ev.y, r: 5, maxR: 40, life: 1.0 });
             if (Utils.distance(this.localPlayer.x, this.localPlayer.y, ev.x, ev.y) < 600) this.camera.shake = 10;
+        }
+        if (ev.type === 'freeze' && ev.target === GlobalState.myId) {
+            this.localPlayer.frozenUntil = Date.now() + 10000;
+            UI.showAlert("🧨 PANDA USED FREEZE BOMB! (10s)", "#3498db");
         }
     },
 
     handleShoot() {
-        if (this.localPlayer.isDead || this.phase !== 'playing') return;
-        const btn = document.getElementById('btn-shoot');
+        if (this.localPlayer.isDead || this.localPlayer.hasFinished) return;
         
-        if (!this.localPlayer.isAiming) {
-            this.localPlayer.isAiming = true;
-            btn.classList.add('aiming-mode');
-            return;
-        }
+        let p = this.localPlayer;
+        let btn = document.getElementById('btn-shoot');
 
-        this.localPlayer.isAiming = false;
-        btn.classList.remove('aiming-mode');
+        if (!p.isAiming) { p.isAiming = true; btn.classList.add('aiming-mode'); return; }
+        p.isAiming = false; btn.classList.remove('aiming-mode');
 
-        // Simple Raycast
-        let hitX = this.localPlayer.x + this.localPlayer.aimDir.x * 400;
-        let hitY = this.localPlayer.y + this.localPlayer.aimDir.y * 400;
+        let hitX = p.x + p.aimDir.x * 200; // Near Shoot limit
+        let hitY = p.y + p.aimDir.y * 200;
 
-        if (GlobalState.gameMode !== 'offline') {
-            Network.roomRef.child('events').push({ type: 'shoot', x: hitX, y: hitY, sender: GlobalState.myId });
-            
-            // Check Hit on Enemy (Host verifies in a real anti-cheat setup, but client side is fine for Web)
-            for(let id in this.players) {
-                let p = this.players[id];
-                if(p.team !== this.localPlayer.team && !p.isDead) {
-                    if (Utils.distance(hitX, hitY, p.x, p.y) < 50) {
-                        Network.roomRef.child(`players/${id}/hp`).transaction(hp => Math.max(0, (hp||100) - 20));
-                        UI.showAlert("HIT!", "#e74c3c");
+        // --- FOX LOGIC ---
+        if (this.myRole === 'fox') {
+            if (this.phase === 'hiding') {
+                // Find closest container
+                let targetId = null;
+                for(let id in this.worldObjects) {
+                    let obj = this.worldObjects[id];
+                    if(obj.isContainer && Utils.distance(hitX, hitY, obj.x+30, obj.y+30) < 60) targetId = id;
+                }
+                
+                if (targetId) {
+                    // AUTO SWITCH LOGIC
+                    if (p.inventory.diamondsToHide > 0) {
+                        Network.roomRef.child(`objects/${targetId}/content`).set('diamond');
+                        p.inventory.diamondsToHide--;
+                        UI.showAlert("DIAMOND PLACED!", "#3498db");
+                    } else if (p.inventory.bombsToHide > 0) {
+                        Network.roomRef.child(`objects/${targetId}/content`).set('bomb');
+                        p.inventory.bombsToHide--;
+                        UI.showAlert("BOMB PLACED!", "#e74c3c");
+                    } else {
+                        UI.showAlert("OUT OF ITEMS!", "#95a5a6");
+                    }
+                    UI.updateHUD(0, this.phase, p.inventory);
+                }
+            } 
+            else if (this.phase === 'playing') {
+                // 1 SECOND COOLDOWN
+                if (Date.now() - this.lastShootTime < 1000) return;
+                this.lastShootTime = Date.now();
+
+                Network.roomRef.child('events').push({ type: 'shoot', x: hitX, y: hitY });
+
+                // Check hit Panda
+                for(let id in this.players) {
+                    let enemy = this.players[id];
+                    if(enemy.team === 'teamB' && !enemy.isDead && !enemy.hasFinished) {
+                        if (Utils.distance(hitX, hitY, enemy.x, enemy.y) < 60) {
+                            // -10 Health
+                            Network.roomRef.child(`players/${id}/hp`).transaction(hp => Math.max(0, (hp||100) - 10));
+                            UI.showAlert("PANDA HIT! Teleporting...", "#2ecc71");
+                            // TELEPORT BACK TO SPAWN
+                            p.x = p.spawnX; p.y = p.spawnY;
+                            Network.roomRef.child(`players/${GlobalState.myId}`).update({ x: p.x, y: p.y });
+                            break;
+                        }
                     }
                 }
             }
-        } else {
-            Bot.handleShootEvent(hitX, hitY);
+        } 
+        // --- PANDA LOGIC ---
+        else if (this.myRole === 'panda' && this.phase === 'playing') {
+            // Find closest container to search
+            let targetId = null;
+            for(let id in this.worldObjects) {
+                let obj = this.worldObjects[id];
+                if(obj.isContainer && Utils.distance(hitX, hitY, obj.x+30, obj.y+30) < 60) targetId = id;
+            }
+
+            if (targetId) {
+                Network.roomRef.child(`objects/${targetId}`).once('value', snap => {
+                    let objData = snap.val();
+                    if (!objData) return UI.showAlert("NOTHING HERE", "#bdc3c7");
+
+                    if (objData.hasFreezeBomb) {
+                        p.inventory.freezeBombs++;
+                        Network.roomRef.child(`objects/${targetId}/hasFreezeBomb`).remove();
+                        UI.showAlert("🧨 FOUND FREEZE BOMB!", "#3498db");
+                    }
+                    else if (objData.content === 'diamond') {
+                        p.inventory.diamondsFound++;
+                        Network.roomRef.child(`objects/${targetId}/content`).remove();
+                        Network.roomRef.child(`players/${GlobalState.myId}/diamondsFound`).set(p.inventory.diamondsFound);
+                        UI.showAlert("💎 DIAMOND FOUND!", "#f1c40f");
+                        if (p.inventory.diamondsFound >= 5) UI.showAlert("QUOTA MET! You are now spectating.", "#2ecc71");
+                    } 
+                    else if (objData.content === 'bomb') {
+                        // -20 HP FOR PANDA BOMB HIT
+                        Network.roomRef.child(`players/${GlobalState.myId}/hp`).transaction(hp => Math.max(0, (hp||100) - 20));
+                        Network.roomRef.child('events').push({ type: 'bomb', x: p.x, y: p.y });
+                        Network.roomRef.child(`objects/${targetId}/content`).remove();
+                        UI.showAlert("💥 BOMB TRAP! -20 HP", "#e74c3c");
+                    } 
+                    else {
+                        UI.showAlert("EMPTY!", "#bdc3c7");
+                    }
+                    UI.updateHUD(0, this.phase, p.inventory);
+                });
+            }
         }
+    },
+
+    // Throw Freeze Bomb Function (Called from UI)
+    throwFreezeBomb() {
+        if (this.myRole !== 'panda' || this.localPlayer.inventory.freezeBombs <= 0 || this.localPlayer.isDead || this.localPlayer.hasFinished) return;
+        
+        let p = this.localPlayer;
+        if (!p.isAiming) return UI.showAlert("AIM FIRST TO THROW!", "#f1c40f");
+        
+        p.inventory.freezeBombs--;
+        UI.updateHUD(0, this.phase, p.inventory);
+        
+        let hitX = p.x + p.aimDir.x * 400;
+        let hitY = p.y + p.aimDir.y * 400;
+
+        // Check if hit a Fox
+        for(let id in this.players) {
+            let enemy = this.players[id];
+            if(enemy.team === 'teamA') {
+                if (Utils.distance(hitX, hitY, enemy.x, enemy.y) < 80) {
+                    Network.roomRef.child('events').push({ type: 'freeze', target: id });
+                    UI.showAlert("FREEZE HIT!", "#2ecc71");
+                    p.isAiming = false; document.getElementById('btn-shoot').classList.remove('aiming-mode');
+                    return;
+                }
+            }
+        }
+        UI.showAlert("MISSED FREEZE BOMB", "#bdc3c7");
+        p.isAiming = false; document.getElementById('btn-shoot').classList.remove('aiming-mode');
     },
 
     loop(timestamp) {
         let dt = (timestamp - this.lastTime) / 1000;
         if(dt > 0.05) dt = 0.05;
         this.lastTime = timestamp;
-
-        if(GlobalState.gameMode === 'offline' && Bot.active) Bot.update(dt);
 
         this.ctx.fillStyle = '#6ab04c';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -194,7 +287,7 @@ const Game = {
             let targetCamX = this.localPlayer.x - this.canvas.width/2;
             let targetCamY = this.localPlayer.y - this.canvas.height/2;
             
-            if (GlobalState.isSpectating) { targetCamX = CONFIG.MAP.PIXEL_SIZE/2 - this.canvas.width/2; targetCamY = CONFIG.MAP.PIXEL_SIZE/2 - this.canvas.height/2; } // Pan to center
+            if (GlobalState.isSpectating) { targetCamX = CONFIG.MAP.PIXEL_SIZE/2 - this.canvas.width/2; targetCamY = CONFIG.MAP.PIXEL_SIZE/2 - this.canvas.height/2; }
             
             if (this.camera.shake > 0) {
                 targetCamX += (Math.random() - 0.5) * this.camera.shake;
@@ -208,7 +301,7 @@ const Game = {
             this.ctx.save();
             this.ctx.translate(-Math.floor(this.camera.x), -Math.floor(this.camera.y));
 
-            // Grid Background
+            // Grid
             this.ctx.strokeStyle = "rgba(0,0,0,0.05)";
             this.ctx.lineWidth = 2;
             for(let i=0; i<CONFIG.MAP.PIXEL_SIZE; i+=80) {
@@ -241,12 +334,20 @@ const Game = {
                 if (exp.life <= 0) this.explosions.splice(i, 1);
             }
 
-            // Aim Line
-            if (this.localPlayer && this.localPlayer.isAiming && !this.localPlayer.isDead) {
+            // Aim Line (Shorter for near shoot limit)
+            if (this.localPlayer && this.localPlayer.isAiming && !this.localPlayer.isDead && !this.localPlayer.hasFinished) {
                 this.ctx.beginPath();
                 this.ctx.moveTo(this.localPlayer.x, this.localPlayer.y);
-                this.ctx.lineTo(this.localPlayer.x + this.localPlayer.aimDir.x * 400, this.localPlayer.y + this.localPlayer.aimDir.y * 400);
+                this.ctx.lineTo(this.localPlayer.x + this.localPlayer.aimDir.x * 200, this.localPlayer.y + this.localPlayer.aimDir.y * 200);
                 this.ctx.strokeStyle = "rgba(255, 255, 255, 0.5)"; this.ctx.lineWidth = 4; this.ctx.stroke();
+            }
+
+            // Draw Freeze effect on local player if active
+            if (this.localPlayer.frozenUntil > Date.now()) {
+                this.ctx.fillStyle = "rgba(52, 152, 219, 0.4)";
+                this.ctx.fillRect(this.localPlayer.x - 50, this.localPlayer.y - 50, 100, 100);
+                this.ctx.fillStyle = "#fff"; this.ctx.font = "20px Arial";
+                this.ctx.fillText(`${Math.ceil((this.localPlayer.frozenUntil - Date.now())/1000)}s`, this.localPlayer.x - 10, this.localPlayer.y - 60);
             }
 
             this.ctx.restore();
