@@ -13,11 +13,11 @@ const AssetManager = {
         let assetKeys = Object.keys(this.assets);
         this.total = assetKeys.length;
         
-        if (this.total === 0) return callback(); // Safety fallback
+        if (this.total === 0) return callback(); // Safety fallback if no assets
         
         assetKeys.forEach(key => {
             let img = new Image();
-            // Critical: Handle both load AND error so the screen never gets stuck
+            // Critical: Handle both load AND error so the screen never gets stuck at 0%
             img.onload = () => this.onAssetLoaded(callback);
             img.onerror = () => this.onAssetLoaded(callback); // Proceed even if missing
             img.src = `img/${this.assets[key]}`; // Assuming images are in an 'img' folder
@@ -78,6 +78,7 @@ function updateJoystick(cx, cy) {
     window.Input = { x: dx/maxR, y: dy/maxR };
 }
 
+// Keyboard fallback loop
 setInterval(() => {
     if(!isDragging) {
         let dx=0, dy=0;
@@ -134,11 +135,16 @@ window.onload = () => {
         Network.joinRoom(document.getElementById('input-room-id').value, document.getElementById('input-room-pass').value);
     };
 
-    // Navigation & Actions
+    // Navigation & Actions (Back & Leave Buttons)
     document.getElementById('btn-friends-back').onclick = () => UI.showScreen('screen-menu');
     document.getElementById('btn-host-back').onclick = () => UI.showScreen('screen-friends-menu');
     document.getElementById('btn-join-back').onclick = () => UI.showScreen('screen-friends-menu');
     document.getElementById('btn-leave-lobby').onclick = () => { location.reload(); };
     document.getElementById('btn-result-menu').onclick = () => { location.reload(); };
+    
+    // In-Game Action Buttons
     document.getElementById('btn-shoot').addEventListener('pointerdown', (e) => { e.preventDefault(); Game.handleShoot(); });
+    
+    // Added: Throw Freeze Bomb Button
+    document.getElementById('btn-throw-freeze').addEventListener('pointerdown', (e) => { e.preventDefault(); Game.throwFreezeBomb(); });
 };
