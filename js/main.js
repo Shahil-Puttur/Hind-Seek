@@ -1,136 +1,109 @@
 // js/main.js
+window.Input = { x: 0, y: 0 };
+const keys = {};
 
-window.checkOrientation = function() {
-    const warning = document.getElementById('orientation-warning');
-    const transitionScreen = document.getElementById('screen-transition');
-    const gameScreen = document.getElementById('screen-game-hud');
-    const blockerScreen = document.getElementById('screen-blocker');
+window.addEventListener('keydown', (e) => { keys[e.code] = true; if(e.code === 'Space') Game.handleShoot(); });
+window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
-    if (transitionScreen.classList.contains('active') || gameScreen.classList.contains('active') || blockerScreen.classList.contains('active')) {
-        if (window.innerHeight > window.innerWidth) warning.style.display = 'flex';
-        else warning.style.display = 'none';
-    } else {
-        warning.style.display = 'none';
+// Joystick Logic
+const joyZone = document.getElementById('joystick-zone');
+const joyKnob = document.getElementById('joystick-knob');
+let isDragging = false, joyCenter = {x:0, y:0}, touchId = null;
+
+joyZone.addEventListener('touchstart', (e) => {
+    e.preventDefault(); if(isDragging) return;
+    let t = e.changedTouches[0]; touchId = t.identifier; isDragging = true;
+    let r = joyZone.getBoundingClientRect(); joyCenter = { x: r.left + r.width/2, y: r.top + r.height/2 };
+    updateJoystick(t.clientX, t.clientY);
+}, {passive: false});
+
+window.addEventListener('touchmove', (e) => {
+    if(!isDragging) return;
+    for(let i=0; i<e.changedTouches.length; i++) {
+        if(e.changedTouches[i].identifier === touchId) updateJoystick(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
     }
-    Utils.checkFullscreen();
-};
+}, {passive: false});
 
-window.onload = function() {
-    // 1. Audio Setup
-    window.audioPool = [];
-    for(let i=0; i<5; i++) {
-        let a = new Audio('assets/sounds/shoot.mp3');
-        a.preload = 'auto';
-        window.audioPool.push(a);
+window.addEventListener('touchend', (e) => {
+    for(let i=0; i<e.changedTouches.length; i++) {
+        if(e.changedTouches[i].identifier === touchId) {
+            isDragging = false; touchId = null; joyKnob.style.transform = `translate(-50%, -50%)`; Input = {x:0, y:0};
+        }
     }
-    window.playShootSound = function() { 
-        try { 
-            window.audioIndex = window.audioIndex || 0; 
-            let snd = window.audioPool[window.audioIndex];
-            snd.currentTime = 0; snd.volume = 1.0; 
-            let p = snd.play(); 
-            if(p !== undefined) p.catch(()=>{});
-            window.audioIndex = (window.audioIndex + 1) % window.audioPool.length; 
-        } catch(e) {} 
-    };
+});
 
-    // 2. Initialize Modules
-    Economy.init();
-    Network.init();
-    Matchmaking.init();
+function updateJoystick(cx, cy) {
+    let dx = cx - joyCenter.x; let dy = cy - joyCenter.y;
+    let dist = Math.sqrt(dx*dx + dy*dy); let maxR = 45;
+    if(dist < maxR * 0.15) { Input = {x:0, y:0}; joyKnob.style.transform = `translate(-50%, -50%)`; return; }
+    if(dist > maxR) { dx = (dx/dist)*maxR; dy = (dy/dist)*maxR; }
+    joyKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    Input = { x: dx/maxR, y: dy/maxR };
+}
+
+// Keyboard fallback loop
+setInterval(() => {
+    if(!isDragging) {
+        let dx=0, dy=0;
+        if(keys['KeyW'] || keys['ArrowUp']) dy -= 1;
+        if(keys['KeyS'] || keys['ArrowDown']) dy += 1;
+        if(keys['KeyA'] || keys['ArrowLeft']) dx -= 1;
+        if(keys['KeyD'] || keys['ArrowRight']) dx += 1;
+        Input = {x: dx, y: dy};
+    }
+}, 50);
+
+// UI Wiring
+window.onload = () => {
+    UI.init();
     Game.init();
-    window.addEventListener('resize', window.checkOrientation);
 
-    // 3. 10-Second Loading Sequence
-    let loadTime = 0;
-    const bar = document.getElementById('loading-bar');
-    const txt = document.getElementById('loading-text');
-    
-    // Load images during this time
-    Game.images['fox'] = new Image(); Game.images['fox'].src = 'assets/images/fox.png';
-    Game.images['panda'] = new Image(); Game.images['panda'].src = 'assets/images/panda.png';
-    // Add other images here...
-
-    const loadInterval = setInterval(() => {
-        loadTime += 100;
-        let percent = Math.min(100, (loadTime / 10000) * 100);
-        bar.style.width = percent + "%";
-        txt.innerText = `Loading Assets... ${Math.floor(percent)}%`;
-
-        if (loadTime >= 10000) {
-            clearInterval(loadInterval);
-            checkAutoLogin();
-        }
-    }, 100);
-
-    // 4. Auto-Login Flow
-    function checkAutoLogin() {
-        let savedU = localStorage.getItem('hidehunt_user');
-        let savedP = localStorage.getItem('hidehunt_pass');
-        
-        if (savedU && savedP) {
-            Network.db.ref('users/' + savedU).once('value', snap => {
-                let data = snap.val();
-                if (data && data.password === savedP) {
-                    finalizeLogin(savedU);
-                } else {
-                    UI.showScreen('screen-start'); // Failed, show Auth
-                }
-            }).catch(() => UI.showScreen('screen-start'));
-        } else {
-            UI.showScreen('screen-start'); // First time, show Auth
-        }
-    }
-
-    function finalizeLogin(username) {
-        document.getElementById('display-username').innerText = username;
-        Utils.enterFullscreen();
-        UI.showScreen('screen-menu');
-    }
-
-    // 5. Auth Buttons
+    // Fake Auth for Web Version Demo
     document.getElementById('btn-login').onclick = () => {
-        let u = document.getElementById('input-username').value.trim().replace(/[^a-zA-Z0-9]/g, ''); 
-        let p = document.getElementById('input-password').value.trim();
-        if(!u || !p) return UI.showError("Enter username and password!");
-        
-        let btn = document.getElementById('btn-login'); btn.innerText = "Wait..."; btn.disabled = true;
-        Network.db.ref('users/' + u).once('value', snap => {
-            btn.innerText = "Login"; btn.disabled = false;
-            let data = snap.val(); 
-            if (data && data.password === p) {
-                localStorage.setItem('hidehunt_user', u); localStorage.setItem('hidehunt_pass', p);
-                finalizeLogin(u);
-            } else UI.showError("Incorrect password or user not found.");
-        }).catch(() => { btn.innerText = "Login"; btn.disabled = false; UI.showError("Network error."); });
+        let u = document.getElementById('input-username').value;
+        if(u.length < 3) return UI.showAlert("Username too short!", "#e74c3c");
+        GlobalState.username = u;
+        document.getElementById('display-username').innerText = u;
+        UI.showScreen('screen-menu');
     };
 
-    document.getElementById('btn-register').onclick = () => {
-        let u = document.getElementById('input-username').value.trim().replace(/[^a-zA-Z0-9]/g, ''); 
-        let p = document.getElementById('input-password').value.trim();
-        if(!u || !p) return UI.showError("Enter username and password!");
-        if(u.length < 3) return UI.showError("Username must be 3+ letters.");
-        
-        let btn = document.getElementById('btn-register'); btn.innerText = "Wait..."; btn.disabled = true;
-        Network.db.ref('users/' + u).once('value', snap => {
-            if (snap.exists()) { 
-                btn.innerText = "Register"; btn.disabled = false; UI.showError("Username already taken."); 
-            } else { 
-                Network.db.ref('users/' + u).set({ password: p }).then(() => { 
-                    btn.innerText = "Register"; btn.disabled = false; 
-                    localStorage.setItem('hidehunt_user', u); localStorage.setItem('hidehunt_pass', p);
-                    finalizeLogin(u); 
-                }); 
-            }
-        });
-    };
+    // Main Menu
+    document.getElementById('btn-menu-offline').onclick = () => { Bot.initOfflineMatch(); };
+    document.getElementById('btn-menu-friends').onclick = () => { UI.showScreen('screen-friends-menu'); };
     
-    // Copy Room
-    document.getElementById('btn-copy-room').onclick = function() {
-        let id = document.getElementById('display-room-id').innerText;
-        let pass = document.getElementById('display-room-pass').innerText;
-        Utils.copyToClipboard(`Join my room!\nID: ${id}\nPass: ${pass}`);
-        let old = this.innerText; this.innerText = "COPIED!";
-        setTimeout(() => this.innerText = old, 1500);
+    // Hosting
+    document.getElementById('btn-friend-host').onclick = () => { UI.showScreen('screen-host-options'); };
+    
+    let selectedMode = '1v1';
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.onclick = (e) => {
+            document.querySelectorAll('.mode-btn').forEach(b => b.style.borderColor = "#333");
+            e.target.style.borderColor = "#f1c40f";
+            selectedMode = e.target.dataset.mode;
+            document.getElementById('team-names-box').classList.remove('hidden');
+        };
+    });
+
+    document.getElementById('btn-confirm-host').onclick = () => {
+        Network.createRoom(selectedMode, document.getElementById('input-team-a').value, document.getElementById('input-team-b').value);
     };
+
+    // Joining
+    document.getElementById('btn-friend-join').onclick = () => { UI.showScreen('screen-join'); };
+    document.getElementById('btn-submit-join').onclick = () => {
+        Network.joinRoom(document.getElementById('input-room-id').value, document.getElementById('input-room-pass').value);
+    };
+
+    // Back Buttons
+    document.getElementById('btn-friends-back').onclick = () => UI.showScreen('screen-menu');
+    document.getElementById('btn-host-back').onclick = () => UI.showScreen('screen-friends-menu');
+    document.getElementById('btn-join-back').onclick = () => UI.showScreen('screen-friends-menu');
+    document.getElementById('btn-leave-lobby').onclick = () => { location.reload(); };
+    document.getElementById('btn-result-menu').onclick = () => { location.reload(); };
+
+    // In Game Actions
+    document.getElementById('btn-shoot').addEventListener('pointerdown', (e) => { e.preventDefault(); Game.handleShoot(); });
+    
+    // Clear Loading screen after slight delay for visual aesthetics
+    setTimeout(() => { UI.showScreen('screen-start'); }, 1000);
 };
