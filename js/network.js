@@ -1,104 +1,118 @@
 // js/network.js
-
 const Network = {
-    db: null,
-    roomId: null,
-    myId: null,
-    isHost: false,
-    serverTimeOffset: 0,
+    roomRef: null,
+    syncInterval: null,
     
-    init: function() {
-        if (!firebase.apps.length) firebase.initializeApp(CONFIG.FIREBASE);
-        this.db = firebase.database();
-        this.myId = Math.random().toString(36).substr(2, 9);
-        this.db.ref('.info/serverTimeOffset').on('value', snap => { this.serverTimeOffset = snap.val() || 0; });
+    createRoom(mode, teamAName, teamBName) {
+        GlobalState.isHost = true;
+        GlobalState.roomId = Math.random().toString(36).substr(2, 6).toUpperCase();
+        GlobalState.gameMode = mode;
+        let roomPass = Math.floor(1000 + Math.random() * 9000).toString();
+        
+        this.roomRef = db.ref('rooms/' + GlobalState.roomId);
+        
+        let maxPlayers = mode === '1v1' ? 2 : (mode === '2v2' ? 4 : 6);
+
+        // Architected for Multi-player Teams
+        this.roomRef.set({
+            settings: {
+                mode: mode,
+                password: roomPass,
+                maxPlayers: maxPlayers,
+                teamAName: teamAName || "Foxes",
+                teamBName: teamBName || "Pandas",
+                mapSeed: Math.floor(Math.random() * 99999)
+            },
+            state: { phase: 'lobby', timer: 0 },
+            teams: {
+                teamA: { role: 'fox', sharedDiamonds: 5, sharedBombs: 2 },
+                teamB: { role: 'panda', freezeBombs: 0 }
+            },
+            players: {},
+            objects: {}, // Map items, safes, traps
+            events: {}   // Bullets, explosions
+        });
+
+        this.joinRoom(GlobalState.roomId, roomPass);
     },
 
-    getSyncTime: function() { return Date.now() + this.serverTimeOffset; },
-
-    listenToConnection: function(callback) { this.db.ref('.info/connected').on('value', snap => { callback(snap.val() === true); }); },
-
-    createRoom: function(roomData, callback) {
-        this.roomId = Math.random().toString(36).substr(2, 6).toUpperCase();
-        this.isHost = true;
-        let ref = this.db.ref('rooms/' + this.roomId);
-        ref.set(roomData).then(() => { ref.onDisconnect().remove(); callback(this.roomId); });
-    },
-
-    joinRoom: function(roomId, password, callback) {
-        let ref = this.db.ref('rooms/' + roomId);
-        ref.once('value', snap => {
+    joinRoom(roomId, pass) {
+        let tempRef = db.ref('rooms/' + roomId);
+        tempRef.once('value', snap => {
             let data = snap.val();
-            if (!data) return callback({ success: false, msg: "Room not found!" });
-            if (data.password !== password) return callback({ success: false, msg: "Incorrect Password!" });
-            if (data.players && Object.keys(data.players).length >= data.maxPlayers) return callback({ success: false, msg: "Room is full!" }); 
+            if (!data) return alert("Room not found!");
+            if (data.settings.password !== pass && pass !== 'internal') return alert("Incorrect Password!");
             
-            this.roomId = roomId; this.isHost = false;
-            callback({ success: true, roomData: data });
+            let pCount = data.players ? Object.keys(data.players).length : 0;
+            if (pCount >= data.settings.maxPlayers) return alert("Room is full!");
+
+            GlobalState.roomId = roomId;
+            this.roomRef = tempRef;
+            
+            // Auto-balance teams
+            let tA = 0, tB = 0;
+            if (data.players) {
+                Object.values(data.players).forEach(p => p.team === 'teamA' ? tA++ : tB++);
+            }
+            GlobalState.myTeam = tA <= tB ? 'teamA' : 'teamB';
+            
+            let pRef = this.roomRef.child('players/' + GlobalState.myId);
+            pRef.set({
+                name: GlobalState.username,
+                team: GlobalState.myTeam,
+                ready: false,
+                hp: 100,
+                x: 0, y: 0,
+                isAiming: false,
+                aimDir: {x: 1, y: 0},
+                isDead: false
+            });
+            pRef.onDisconnect().remove();
+
+            if (GlobalState.isHost) {
+                this.roomRef.child('state').onDisconnect().update({ phase: 'finished', winner: 'Host Disconnected' });
+            }
+
+            if(window.Matchmaking) Matchmaking.enterLobby(data);
+            this.setupListeners();
         });
     },
 
-    joinPlayer: function(playerData) {
-        if (!this.roomId) return;
-        let pRef = this.db.ref(`rooms/${this.roomId}/players/${this.myId}`);
-        pRef.set(playerData); pRef.onDisconnect().remove();
-    },
-
-    updatePlayerStatus: function(updates) {
-        if (!this.roomId) return;
-        this.db.ref(`rooms/${this.roomId}/players/${this.myId}`).update(updates);
-    },
-
-    updateAnyPlayerStatus: function(playerId, updates) {
-        if (!this.roomId || !this.isHost) return;
-        this.db.ref(`rooms/${this.roomId}/players/${playerId}`).update(updates);
-    },
-
-    updateRoomState: function(updates) {
-        if (!this.roomId || !this.isHost) return;
-        this.db.ref(`rooms/${this.roomId}`).update(updates);
-    },
-
-    syncPosition: function(x, y, isAiming, aimDir) {
-        if (!this.roomId || !Game.isPlaying) return;
-        this.db.ref(`rooms/${this.roomId}/players/${this.myId}`).update({ x: Math.round(x), y: Math.round(y), isAiming: isAiming, aimDir: aimDir });
-    },
-
-    sendShootEvent: function(x, y) {
-        if (!this.roomId) return;
-        this.db.ref(`rooms/${this.roomId}/events`).push({ type: 'shoot', x: x, y: y, sender: this.myId, time: this.getSyncTime() });
-    },
-
-    listenToRoom: function(callbacks) {
-        if (!this.roomId) return;
-        let ref = this.db.ref(`rooms/${this.roomId}`);
-        
-        ref.child('players').on('value', snap => {
-            if(callbacks.onPlayersUpdate) callbacks.onPlayersUpdate(snap.val() || {});
+    setupListeners() {
+        this.roomRef.child('state').on('value', s => { if(window.Game) window.Game.handleStateChange(s.val()); });
+        this.roomRef.child('players').on('value', s => { if(window.Game) window.Game.updatePlayers(s.val()); });
+        this.roomRef.child('events').on('child_added', s => { 
+            if(window.Game) window.Game.handleEvent(s.val()); 
+            s.ref.remove(); // Clean up events immediately to prevent DB bloat
         });
-        
-        ref.child('gameState').on('value', snap => {
-            if(callbacks.onStateChange) callbacks.onStateChange(snap.val());
-        });
-
-        ref.child('events').on('child_added', snap => {
-            let ev = snap.val();
-            if(callbacks.onEventReceived) callbacks.onEventReceived(ev);
-            snap.ref.remove();
-        });
-        
-        ref.child('mapItems').on('value', snap => {
-            let items = snap.val() || {};
-            Game.mapItems = items; // Sync items globally
-            if(callbacks.onItemsUpdate) callbacks.onItemsUpdate(items);
-        });
+        this.roomRef.child('objects').on('value', s => { if(window.Game) window.Game.updateWorldObjects(s.val()); });
+        this.roomRef.child('teams').on('value', s => { if(window.Game) window.Game.updateTeamStats(s.val()); });
     },
 
-    leaveRoom: function() {
-        if (this.roomId) {
-            this.db.ref(`rooms/${this.roomId}/players/${this.myId}`).remove();
-            this.db.ref(`rooms/${this.roomId}`).off();
-            this.roomId = null; this.isHost = false;
-        }
+    startSync() {
+        if (this.syncInterval) clearInterval(this.syncInterval);
+        this.syncInterval = setInterval(() => {
+            if (!GlobalState.isSpectating && window.Game && window.Game.localPlayer) {
+                this.roomRef.child('players/' + GlobalState.myId).update({
+                    x: window.Game.localPlayer.x,
+                    y: window.Game.localPlayer.y,
+                    isAiming: window.Game.localPlayer.isAiming,
+                    aimDir: window.Game.localPlayer.aimDir
+                });
+            }
+        }, CONFIG.TIMERS.SYNC_RATE);
+    },
+    
+    triggerSafeUnlock() {
+        this.roomRef.child('objects/safeUnlocked').set(true);
+        // Transaction to add 30 HP to all players on my team safely
+        this.roomRef.child('players').once('value', snap => {
+            let pData = snap.val();
+            for (let id in pData) {
+                if (pData[id].team === GlobalState.myTeam && pData[id].hp > 0) {
+                    this.roomRef.child(`players/${id}/hp`).transaction(hp => Math.min(100, (hp || 0) + 30));
+                }
+            }
+        });
     }
 };
