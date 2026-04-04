@@ -1,5 +1,5 @@
 // js/config.js
-const GAME_VERSION = "3.0-Production";
+const GAME_VERSION = "3.1-Ultimate";
 
 const CONFIG = {
     FIREBASE: {
@@ -19,31 +19,28 @@ const CONFIG = {
     TIMERS: {
         PRE_GAME: 5,
         HIDING: 60,
-        PLAYING: 300, // 5 minutes max
-        SYNC_RATE: 100 // 10 ticks per second (optimized for Firebase)
+        PLAYING: 180, // Updated to exactly 3 Minutes (180 seconds)
+        SYNC_RATE: 100 
     },
     TEAMS: {
-        FOX: { id: 'fox', name: 'Foxes', color: '#e67e22', items: { diamonds: 5, bombs: 2 } },
+        FOX: { id: 'fox', name: 'Foxes', color: '#e67e22' },
         PANDA: { id: 'panda', name: 'Pandas', color: '#3498db' }
     }
 };
 
-// Initialize Firebase
 firebase.initializeApp(CONFIG.FIREBASE);
 const db = firebase.database();
 
-// Server Time Sync to prevent countdown desyncs across devices
 let serverTimeOffset = 0;
 db.ref('.info/serverTimeOffset').on('value', snap => { serverTimeOffset = snap.val() || 0; });
 function getSyncTime() { return Date.now() + serverTimeOffset; }
 
-// Global Local State Tracking
 window.GlobalState = {
     myId: Math.random().toString(36).substr(2, 9),
     username: "Player",
     roomId: null,
     isHost: false,
-    gameMode: '1v1', // 1v1, 2v2, 3v3, offline
+    gameMode: '1v1',
     myTeam: null,
     isSpectating: false
 };
