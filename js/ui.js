@@ -30,7 +30,7 @@ const UI = {
         alertBox.innerText = text; 
         alertBox.style.color = color;
         alertBox.classList.remove('hidden', 'show-alert');
-        void alertBox.offsetWidth; // Force DOM Reflow
+        void alertBox.offsetWidth; // Force reflow
         alertBox.classList.add('active', 'show-alert');
         
         if (this.alertTimeout) clearTimeout(this.alertTimeout);
@@ -40,13 +40,46 @@ const UI = {
         }, 1500);
     },
 
-    updateHUD(timeLeft, phase, foxHP, pandaHP) {
-        let m = Math.floor(timeLeft / 60); let s = timeLeft % 60;
+    // Updated to handle new Inventory and HP rules
+    updateHUD(timeLeft, phase, inventory) {
+        // Timer
+        let m = Math.floor(Math.max(0, timeLeft) / 60); 
+        let s = Math.floor(Math.max(0, timeLeft) % 60);
         document.getElementById('hud-timer').innerText = `${m}:${s < 10 ? '0':''}${s}`;
         document.getElementById('hud-phase').innerText = phase.toUpperCase();
         
-        document.getElementById('hud-fox-stats').innerText = `Foxes: ${foxHP} HP`;
-        document.getElementById('hud-panda-stats').innerText = `Pandas: ${pandaHP} HP`;
+        const foxStats = document.getElementById('hud-fox-stats');
+        const pandaStats = document.getElementById('hud-panda-stats');
+        const freezeBtn = document.getElementById('btn-throw-freeze');
+
+        if (Game.myRole === 'fox') {
+            foxStats.classList.remove('hidden');
+            pandaStats.classList.add('hidden');
+            freezeBtn.classList.add('hidden');
+
+            if (phase === 'hiding') {
+                let currentItem = inventory.diamondsToHide > 0 ? '💎 DIAMOND' : (inventory.bombsToHide > 0 ? '💣 BOMB' : '✅ DONE');
+                foxStats.innerText = `PLACING: ${currentItem} | Left: ${inventory.diamondsToHide}D, ${inventory.bombsToHide}B`;
+                foxStats.style.borderColor = inventory.diamondsToHide > 0 ? '#3498db' : '#e74c3c';
+            } else {
+                foxStats.innerText = `🦊 HUNT THEM DOWN!`;
+                foxStats.style.borderColor = '#e74c3c';
+            }
+        } 
+        else if (Game.myRole === 'panda') {
+            foxStats.classList.add('hidden');
+            pandaStats.classList.remove('hidden');
+            
+            pandaStats.innerText = `🐼 HP: ${Math.max(0, Game.localPlayer.hp)} | 💎 Found: ${inventory.diamondsFound}/5`;
+            
+            // Show Freeze Bomb button if Panda has them
+            if (inventory.freezeBombs > 0 && phase === 'playing' && !GlobalState.isSpectating) {
+                freezeBtn.classList.remove('hidden');
+                freezeBtn.innerText = `🧨 x${inventory.freezeBombs}`;
+            } else {
+                freezeBtn.classList.add('hidden');
+            }
+        }
     },
 
     closeOverlays() {
@@ -77,7 +110,7 @@ const UI = {
     },
 
     submitPassword() {
-        if (this.enteredPwd === window.Game.safePassword) {
+        if (this.enteredPwd === Game.safePassword) {
             this.closeOverlays();
             this.showAlert("💉 TEAM HEAL +30%!", "#2ecc71");
             Network.triggerSafeUnlock();
