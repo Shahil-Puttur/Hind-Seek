@@ -2,14 +2,22 @@
 const Matchmaking = {
     enterLobby(data) {
         UI.showScreen('screen-lobby');
+        
+        // Hide password if it's a public QuickMatch room
+        let passDisplay = data.settings.isPublic ? 'PUBLIC (No Pass)' : data.settings.password;
         document.getElementById('display-room-id').innerText = GlobalState.roomId;
-        document.getElementById('display-room-pass').innerText = data.settings.password === 'internal' ? 'None' : data.settings.password;
+        document.getElementById('display-room-pass').innerText = passDisplay;
         
         document.getElementById('lobby-name-team-a').innerText = data.settings.teamAName;
         document.getElementById('lobby-name-team-b').innerText = data.settings.teamBName;
         
+        document.getElementById('room-info').classList.remove('hidden');
+        
+        // Only Host sees the Start Button
         if (GlobalState.isHost) {
             document.getElementById('btn-start-match').classList.remove('hidden');
+        } else {
+            document.getElementById('btn-start-match').classList.add('hidden');
         }
     },
 
@@ -19,9 +27,11 @@ const Matchmaking = {
         const listA = document.getElementById('list-team-a');
         const listB = document.getElementById('list-team-b');
         
-        // Keep titles, clear old players
-        listA.innerHTML = `<h3 class="text-orange" id="lobby-name-team-a">Team 1 (Foxes)</h3>`;
-        listB.innerHTML = `<h3 class="text-blue" id="lobby-name-team-b">Team 2 (Pandas)</h3>`;
+        // Preserve titles
+        let titleA = listA.querySelector('h3').outerHTML;
+        let titleB = listB.querySelector('h3').outerHTML;
+        listA.innerHTML = titleA;
+        listB.innerHTML = titleB;
         
         let pCount = 0;
         
@@ -32,13 +42,16 @@ const Matchmaking = {
             
             let row = document.createElement('div');
             row.className = 'player-row';
-            row.innerHTML = `<span>${p.name} ${isMe ? '(You)' : ''}</span>`;
+            row.innerHTML = `<span>${p.name} ${isMe ? '(You)' : ''} ${GlobalState.isHost && id === Object.keys(players)[0] ? '👑' : ''}</span>`;
             
-            if (isMe) {
+            // HOST PRIVILEGE: Host can swap anyone. Regular players can only swap themselves.
+            let canSwap = GlobalState.isHost || isMe;
+            
+            if (canSwap) {
                 let swapBtn = document.createElement('button');
                 swapBtn.className = 'swap-btn';
                 swapBtn.innerText = 'Swap';
-                swapBtn.onclick = () => this.swapTeam(p.team);
+                swapBtn.onclick = () => this.swapTeam(id, p.team); // Target specific ID
                 row.appendChild(swapBtn);
             }
             
@@ -46,11 +59,13 @@ const Matchmaking = {
             else listB.appendChild(row);
         }
 
-        document.getElementById('lobby-status').innerText = `Players: ${pCount} / ${Game.maxPlayers || '?'}`;
+        let maxP = Game.maxPlayers || 2;
+        document.getElementById('lobby-status').innerText = `Players: ${pCount} / ${maxP}`;
         
-        // Auto-start offline logic check
+        // Start match binding
         if(GlobalState.isHost && pCount > 0) {
             document.getElementById('btn-start-match').onclick = () => {
+                if (pCount < maxP && !confirm("Start game without full lobby?")) return;
                 Network.roomRef.child('state').update({
                     phase: 'transition',
                     timer: getSyncTime() + (CONFIG.TIMERS.PRE_GAME * 1000)
@@ -59,9 +74,15 @@ const Matchmaking = {
         }
     },
 
-    swapTeam(currentTeam) {
+    swapTeam(playerId, currentTeam) {
         let newTeam = currentTeam === 'teamA' ? 'teamB' : 'teamA';
-        GlobalState.myTeam = newTeam;
-        Network.roomRef.child(`players/${GlobalState.myId}/team`).set(newTeam);
+        
+        // If swapping myself, update my local state
+        if (playerId === GlobalState.myId) {
+            GlobalState.myTeam = newTeam;
+        }
+        
+        // Push team change to Firebase
+        Network.roomRef.child(`players/${playerId}/team`).set(newTeam);
     }
 };
